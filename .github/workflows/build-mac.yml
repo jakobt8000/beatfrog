@@ -1,0 +1,44 @@
+name: Build Mac plugin
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  build-mac:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure
+        run: cmake -S . -B build -G Xcode
+
+      - name: Build VST3 and AU (universal, Apple Silicon and Intel)
+        run: cmake --build build --config Release --target BeatFrog_VST3 BeatFrog_AU -- -quiet
+
+      - name: Sign (ad-hoc) and package
+        run: |
+          ART=build/BeatFrog_artefacts/Release
+          mkdir -p "BEAT FROG"
+          cp -R "$ART/VST3/BEAT FROG.vst3" "BEAT FROG/"
+          cp -R "$ART/AU/BEAT FROG.component" "BEAT FROG/"
+          codesign --force --deep --sign - "BEAT FROG/BEAT FROG.vst3"
+          codesign --force --deep --sign - "BEAT FROG/BEAT FROG.component"
+          lipo -info "BEAT FROG/BEAT FROG.vst3/Contents/MacOS/BEAT FROG"
+          cp INSTALL.txt install.command "BEAT FROG/"
+          chmod +x "BEAT FROG/install.command"
+          ditto -c -k --keepParent "BEAT FROG" BEAT-FROG-mac.zip
+
+      - name: Validate AU with Apple's auval
+        continue-on-error: true
+        run: |
+          mkdir -p ~/Library/Audio/Plug-Ins/Components
+          cp -R "BEAT FROG/BEAT FROG.component" ~/Library/Audio/Plug-Ins/Components/
+          killall -9 AudioComponentRegistrar || true
+          sleep 2
+          auval -v aumu Bfrg Rznz
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: BEAT-FROG-mac
+          path: BEAT-FROG-mac.zip
